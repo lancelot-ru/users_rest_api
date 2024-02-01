@@ -3,7 +3,6 @@ package models
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -34,7 +33,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, u)
+	respondWithJSON(w, http.StatusOK, map[string]string{"result": "user successfully created"})
 }
 
 func CreateUserFromXLS(w http.ResponseWriter, r *http.Request) {
@@ -42,12 +41,17 @@ func CreateUserFromXLS(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetUser(w http.ResponseWriter, r *http.Request) {
-	params := mux.Vars(r)
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
 
-	row := GetDB().QueryRow(context.Background(), "SELECT * FROM users WHERE id=$1", params["id"])
+	row := GetDB().QueryRow(context.Background(), "SELECT * FROM users WHERE id=$1", id)
 
 	var u User
-	err := row.Scan(&u.Surname, &u.Name, &u.Patronymic, &u.Sex, &u.Status, &u.DateOfBirth, &u.DateAdded, &u.ID)
+	err = row.Scan(&u.Surname, &u.Name, &u.Patronymic, &u.Sex, &u.Status, &u.DateOfBirth, &u.DateAdded, &u.ID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -101,7 +105,8 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queryString := constructQuery(filterMap, sortQuery, limit, offset)
-	fmt.Println(queryString)
+	///fmt.Println(queryString)
+
 	rows, err := GetDB().Query(context.Background(), queryString)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
@@ -131,25 +136,35 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	var u User
 	_ = json.NewDecoder(r.Body).Decode(&u)
 
-	params := mux.Vars(r)
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
 
 	if _, err := GetDB().Exec(context.Background(),
 		"UPDATE users SET surname=$1, name=$2, patronymic=$3, sex=$4, status=$5, date_of_birth=$6, date_added=$7 WHERE id=$8",
-		u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth, u.DateAdded, params["id"],
+		u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth, u.DateAdded, id,
 	); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, u)
+	respondWithJSON(w, http.StatusOK, map[string]string{"result": "user successfully updated"})
 }
 
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
-	params := mux.Vars(r)
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid user ID")
+		return
+	}
 
-	if _, err := GetDB().Exec(context.Background(), "DELETE FROM users WHERE id=$1", params["id"]); err != nil {
+	if _, err := GetDB().Exec(context.Background(), "DELETE FROM users WHERE id=$1", id); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]string{"result": "success"})
+	respondWithJSON(w, http.StatusOK, map[string]string{"result": "user successfully deleted"})
 }
