@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -25,9 +26,11 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	var u User
 	_ = json.NewDecoder(r.Body).Decode(&u)
 
+	currentDate := pgtype.Date{Time: time.Now(), Valid: true}
+
 	if _, err := GetDB().Exec(context.Background(),
 		"INSERT INTO users (surname, name, patronymic, sex, status, date_of_birth, date_added) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-		u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth, u.DateAdded,
+		u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth, currentDate,
 	); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -105,7 +108,6 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queryString := constructQuery(filterMap, sortQuery, limit, offset)
-	///fmt.Println(queryString)
 
 	rows, err := GetDB().Query(context.Background(), queryString)
 	if err != nil {
@@ -144,8 +146,8 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := GetDB().Exec(context.Background(),
-		"UPDATE users SET surname=$1, name=$2, patronymic=$3, sex=$4, status=$5, date_of_birth=$6, date_added=$7 WHERE id=$8",
-		u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth, u.DateAdded, id,
+		"UPDATE users SET surname=$1, name=$2, patronymic=$3, sex=$4, status=$5, date_of_birth=$6 WHERE id=$7",
+		u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth, id,
 	); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
