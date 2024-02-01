@@ -3,12 +3,16 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shakinm/xlsReader/xls"
+	"github.com/xuri/excelize/v2"
 )
 
 type User struct {
@@ -36,11 +40,127 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]string{"result": "user successfully created"})
+	respondWithJSON(w, http.StatusCreated, map[string]string{"result": "user successfully created"})
 }
 
-func CreateUserFromXLS(w http.ResponseWriter, r *http.Request) {
-	respondWithError(w, http.StatusInternalServerError, "TODO")
+func CreateUsersFromXLS(w http.ResponseWriter, r *http.Request) {
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer file.Close()
+
+	f, err := xls.OpenReader(file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	users := []User{}
+
+	for _, sheet := range f.GetSheets() {
+		for i := 0; i < sheet.GetNumberRows(); i++ {
+			row, err := sheet.GetRow(i)
+			if err != nil {
+				respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("row %d doesn't exist", i))
+				return
+			}
+
+			var u User
+			if len(row.GetCols()) != 5 {
+				respondWithError(w, http.StatusInternalServerError, "invalid XLS file")
+				return
+			}
+
+			cells := make([]string, 0, 5)
+			for _, col := range row.GetCols() {
+				cells = append(cells, col.GetString())
+			}
+
+			u.Surname = cells[0]
+			u.Name = cells[1]
+			u.Patronymic = cells[2]
+			u.Sex = cells[3]
+			u.Status = "active"
+			u.DateOfBirth = pgtype.Date{}
+			u.DateAdded = pgtype.Date{Time: time.Now(), Valid: true}
+
+			users = append(users, u)
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("INSERT INTO users (surname, name, patronymic, sex, status, date_of_birth, date_added) VALUES")
+	for _, u := range users {
+		str := fmt.Sprintf(" ('%s', '%s',' %s', '%s', '%s', '%s', '%s'),", u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth.Time.Format("2006-01-02"), u.DateAdded.Time.Format("2006-01-02"))
+		b.WriteString(str)
+	}
+
+	if _, err := GetDB().Exec(context.Background(), strings.Trim(b.String(), ",")); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, map[string]string{"result": "user(s) successfully created"})
+}
+
+func CreateUsersFromXLSX(w http.ResponseWriter, r *http.Request) {
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer file.Close()
+
+	f, err := excelize.OpenReader(file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer f.Close()
+
+	users := []User{}
+
+	for _, sheet := range f.GetSheetList() {
+		rows, err := f.GetRows(sheet)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		for _, row := range rows {
+			var u User
+			if len(row) != 5 {
+				respondWithError(w, http.StatusInternalServerError, "invalid XLSX file")
+				return
+			}
+
+			u.Surname = row[0]
+			u.Name = row[1]
+			u.Patronymic = row[2]
+			u.Sex = row[3]
+			u.Status = "active"
+			u.DateOfBirth = pgtype.Date{}
+			u.DateAdded = pgtype.Date{Time: time.Now(), Valid: true}
+
+			users = append(users, u)
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("INSERT INTO users (surname, name, patronymic, sex, status, date_of_birth, date_added) VALUES")
+	for _, u := range users {
+		str := fmt.Sprintf(" ('%s', '%s',' %s', '%s', '%s', '%s', '%s'),", u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth.Time.Format("2006-01-02"), u.DateAdded.Time.Format("2006-01-02"))
+		b.WriteString(str)
+	}
+
+	if _, err := GetDB().Exec(context.Background(), strings.Trim(b.String(), ",")); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusCreated, map[string]string{"result": "user(s) successfully created"})
 }
 
 func GetUser(w http.ResponseWriter, r *http.Request) {

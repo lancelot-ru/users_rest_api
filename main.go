@@ -24,7 +24,8 @@ func main() {
 
 	r.HandleFunc("/users", models.GetUsers).Methods("GET")
 	r.HandleFunc("/users/new/json", models.CreateUser).Methods("POST")
-	r.HandleFunc("/users/new/xls", models.CreateUserFromXLS).Methods("POST")
+	r.HandleFunc("/users/new/xls", models.CreateUsersFromXLS).Methods("POST")
+	r.HandleFunc("/users/new/xlsx", models.CreateUsersFromXLSX).Methods("POST")
 
 	r.HandleFunc("/users/{id}", models.GetUser).Methods("GET")
 	r.HandleFunc("/users/{id}", models.UpdateUser).Methods("PUT")
