@@ -14,9 +14,11 @@ import (
 
 func main() {
 	db := models.GetDB()
+	redisDb := models.GetRedisDB()
 	defer func() {
 		fmt.Println("Closing DB...")
 		db.Close(context.Background())
+		redisDb.Close()
 		fmt.Println("DB closed")
 	}()
 

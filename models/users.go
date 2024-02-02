@@ -15,6 +15,8 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+const EXP_TIME = 30 * time.Second
+
 type User struct {
 	Surname     string      `json:"surname"`
 	Name        string      `json:"name"`
@@ -186,71 +188,95 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 func GetUsers(w http.ResponseWriter, r *http.Request) {
 	users := []User{}
 
-	sortBy := r.URL.Query().Get("sortBy")
-	if sortBy == "" {
-		sortBy = "id.asc"
-	}
-
-	sortQuery, err := parseSortQuery(sortBy)
+	cachedUsers, err := GetRedisDB().Get(context.Background(), "users").Bytes()
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, err.Error())
-		return
-	}
 
-	strLimit := r.URL.Query().Get("limit")
-	limit := -1
-	if strLimit != "" {
-		limit, err = strconv.Atoi(strLimit)
-		if err != nil || limit < -1 {
-			respondWithError(w, http.StatusBadRequest, err.Error())
-			return
+		sortBy := r.URL.Query().Get("sortBy")
+		if sortBy == "" {
+			sortBy = "id.asc"
 		}
-	}
 
-	strOffset := r.URL.Query().Get("offset")
-	offset := -1
-	if strOffset != "" {
-		offset, err = strconv.Atoi(strOffset)
-		if err != nil || offset < -1 {
-			respondWithError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-
-	filter := r.URL.Query().Get("filter")
-	filterMap := map[string]string{}
-	if filter != "" {
-		filterMap, err = parseFilterMap(filter)
+		sortQuery, err := parseSortQuery(sortBy)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-	}
 
-	queryString := constructQuery(filterMap, sortQuery, limit, offset)
+		strLimit := r.URL.Query().Get("limit")
+		limit := -1
+		if strLimit != "" {
+			limit, err = strconv.Atoi(strLimit)
+			if err != nil || limit < -1 {
+				respondWithError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 
-	rows, err := GetDB().Query(context.Background(), queryString)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer rows.Close()
+		strOffset := r.URL.Query().Get("offset")
+		offset := -1
+		if strOffset != "" {
+			offset, err = strconv.Atoi(strOffset)
+			if err != nil || offset < -1 {
+				respondWithError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 
-	for rows.Next() {
-		var u User
-		err := rows.Scan(&u.Surname, &u.Name, &u.Patronymic, &u.Sex, &u.Status, &u.DateOfBirth, &u.DateAdded, &u.ID)
+		filter := r.URL.Query().Get("filter")
+		filterMap := map[string]string{}
+		if filter != "" {
+			filterMap, err = parseFilterMap(filter)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+
+		queryString := constructQuery(filterMap, sortQuery, limit, offset)
+
+		rows, err := GetDB().Query(context.Background(), queryString)
 		if err != nil {
 			respondWithError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		users = append(users, u)
+		defer rows.Close()
+
+		for rows.Next() {
+			var u User
+			err := rows.Scan(&u.Surname, &u.Name, &u.Patronymic, &u.Sex, &u.Status, &u.DateOfBirth, &u.DateAdded, &u.ID)
+			if err != nil {
+				respondWithError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			users = append(users, u)
+		}
+
+		err = rows.Err()
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, err.Error())
+		}
+
+		cachedUsers, err = json.Marshal(users)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, err.Error())
+		}
+
+		err = GetRedisDB().Set(context.Background(), "users", cachedUsers, EXP_TIME).Err()
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, err.Error())
+		}
+
+		fmt.Println(time.Now(), "Used Postgres")
+		respondWithJSON(w, http.StatusOK, users)
+		return
 	}
 
-	err = rows.Err()
+	err = json.Unmarshal(cachedUsers, &users)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 	}
 
+	fmt.Println(time.Now(), "Used Redis")
 	respondWithJSON(w, http.StatusOK, users)
 }
 
