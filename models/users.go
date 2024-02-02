@@ -42,6 +42,8 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go FlushRedisDB()
+
 	respondWithJSON(w, http.StatusCreated, map[string]string{"result": "user successfully created"})
 }
 
@@ -104,6 +106,8 @@ func CreateUsersFromXLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go FlushRedisDB()
+
 	respondWithJSON(w, http.StatusCreated, map[string]string{"result": "user(s) successfully created"})
 }
 
@@ -162,6 +166,8 @@ func CreateUsersFromXLSX(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go FlushRedisDB()
+
 	respondWithJSON(w, http.StatusCreated, map[string]string{"result": "user(s) successfully created"})
 }
 
@@ -188,52 +194,51 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 func GetUsers(w http.ResponseWriter, r *http.Request) {
 	users := []User{}
 
-	cachedUsers, err := GetRedisDB().Get(context.Background(), "users").Bytes()
+	sortBy := r.URL.Query().Get("sortBy")
+	if sortBy == "" {
+		sortBy = "id.asc"
+	}
+
+	sortQuery, err := parseSortQuery(sortBy)
 	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-		sortBy := r.URL.Query().Get("sortBy")
-		if sortBy == "" {
-			sortBy = "id.asc"
-		}
-
-		sortQuery, err := parseSortQuery(sortBy)
-		if err != nil {
+	strLimit := r.URL.Query().Get("limit")
+	limit := -1
+	if strLimit != "" {
+		limit, err = strconv.Atoi(strLimit)
+		if err != nil || limit < -1 {
 			respondWithError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+	}
 
-		strLimit := r.URL.Query().Get("limit")
-		limit := -1
-		if strLimit != "" {
-			limit, err = strconv.Atoi(strLimit)
-			if err != nil || limit < -1 {
-				respondWithError(w, http.StatusBadRequest, err.Error())
-				return
-			}
+	strOffset := r.URL.Query().Get("offset")
+	offset := -1
+	if strOffset != "" {
+		offset, err = strconv.Atoi(strOffset)
+		if err != nil || offset < -1 {
+			respondWithError(w, http.StatusBadRequest, err.Error())
+			return
 		}
+	}
 
-		strOffset := r.URL.Query().Get("offset")
-		offset := -1
-		if strOffset != "" {
-			offset, err = strconv.Atoi(strOffset)
-			if err != nil || offset < -1 {
-				respondWithError(w, http.StatusBadRequest, err.Error())
-				return
-			}
+	filter := r.URL.Query().Get("filter")
+	filterMap := map[string]string{}
+	if filter != "" {
+		filterMap, err = parseFilterMap(filter)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
+	}
 
-		filter := r.URL.Query().Get("filter")
-		filterMap := map[string]string{}
-		if filter != "" {
-			filterMap, err = parseFilterMap(filter)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-		}
+	queryString := constructQuery(filterMap, sortQuery, limit, offset)
 
-		queryString := constructQuery(filterMap, sortQuery, limit, offset)
-
+	cachedUsers, err := GetRedisDB().Get(context.Background(), queryString).Bytes()
+	if err != nil {
 		rows, err := GetDB().Query(context.Background(), queryString)
 		if err != nil {
 			respondWithError(w, http.StatusInternalServerError, err.Error())
@@ -261,7 +266,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, http.StatusInternalServerError, err.Error())
 		}
 
-		err = GetRedisDB().Set(context.Background(), "users", cachedUsers, EXP_TIME).Err()
+		err = GetRedisDB().Set(context.Background(), queryString, cachedUsers, EXP_TIME).Err()
 		if err != nil {
 			respondWithError(w, http.StatusInternalServerError, err.Error())
 		}
@@ -299,6 +304,8 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go FlushRedisDB()
+
 	respondWithJSON(w, http.StatusOK, map[string]string{"result": "user successfully updated"})
 }
 
@@ -313,6 +320,8 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	if _, err := GetDB().Exec(context.Background(), "DELETE FROM users WHERE id=$1", id); err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 	}
+
+	go FlushRedisDB()
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"result": "user successfully deleted"})
 }
