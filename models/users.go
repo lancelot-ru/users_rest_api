@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shakinm/xlsReader/xls"
 	"github.com/xuri/excelize/v2"
@@ -94,14 +95,14 @@ func CreateUsersFromXLS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var b strings.Builder
-	b.WriteString("INSERT INTO users (surname, name, patronymic, sex, status, date_of_birth, date_added) VALUES")
+	batch := &pgx.Batch{}
 	for _, u := range users {
-		str := fmt.Sprintf(" ('%s', '%s',' %s', '%s', '%s', '%s', '%s'),", u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth.Time.Format("2006-01-02"), u.DateAdded.Time.Format("2006-01-02"))
-		b.WriteString(str)
+		batch.Queue("INSERT INTO users (surname, name, patronymic, sex, status, date_of_birth, date_added) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+			u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth.Time.Format("2006-01-02"), u.DateAdded.Time.Format("2006-01-02"))
 	}
 
-	if _, err := GetDB().Exec(context.Background(), strings.Trim(b.String(), ",")); err != nil {
+	err = GetDB().SendBatch(context.Background(), batch).Close()
+	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -154,14 +155,14 @@ func CreateUsersFromXLSX(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var b strings.Builder
-	b.WriteString("INSERT INTO users (surname, name, patronymic, sex, status, date_of_birth, date_added) VALUES")
+	batch := &pgx.Batch{}
 	for _, u := range users {
-		str := fmt.Sprintf(" ('%s', '%s',' %s', '%s', '%s', '%s', '%s'),", u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth.Time.Format("2006-01-02"), u.DateAdded.Time.Format("2006-01-02"))
-		b.WriteString(str)
+		batch.Queue("INSERT INTO users (surname, name, patronymic, sex, status, date_of_birth, date_added) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+			u.Surname, u.Name, u.Patronymic, u.Sex, u.Status, u.DateOfBirth.Time.Format("2006-01-02"), u.DateAdded.Time.Format("2006-01-02"))
 	}
 
-	if _, err := GetDB().Exec(context.Background(), strings.Trim(b.String(), ",")); err != nil {
+	err = GetDB().SendBatch(context.Background(), batch).Close()
+	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -271,7 +272,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, http.StatusInternalServerError, err.Error())
 		}
 
-		fmt.Println(time.Now(), "Used Postgres")
+		log.Println("Used Postgres")
 		respondWithJSON(w, http.StatusOK, users)
 		return
 	}
@@ -281,7 +282,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 	}
 
-	fmt.Println(time.Now(), "Used Redis")
+	log.Println("Used Redis")
 	respondWithJSON(w, http.StatusOK, users)
 }
 

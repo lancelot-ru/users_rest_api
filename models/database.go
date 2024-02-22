@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/joho/godotenv"
@@ -56,8 +55,8 @@ func GetRedisDB() *redis.Client {
 func FlushRedisDB() {
 	err := GetRedisDB().FlushDB(context.Background()).Err()
 	if err != nil {
-		fmt.Println(time.Now(), "Error flushing Redis DB")
+		log.Println("Error flushing Redis DB")
 	} else {
-		fmt.Println(time.Now(), "Successfully flushed Redis DB")
+		log.Println("Successfully flushed Redis DB")
 	}
 }
